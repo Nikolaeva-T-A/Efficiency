@@ -15,7 +15,7 @@ import openpyxl
 import math
 import re
 
-folder_path = '/content/'
+folder_path = ''
 files = [file for file in os.listdir(folder_path) if file.endswith(".xlsx")]
 files.sort()
 
@@ -66,30 +66,6 @@ def mean_kvart(data):
 
   return data[:kvart].mean(), data[-kvart:].mean()
 
-def seance(filename):
-
-  match = re.search(r'Seance(\d+)_(\d+)', filename)
-  if match:
-      seance_number = match.group(1) + '_' + match.group(2)  # Получаем номер сеанса в формате '7_1'
-
-      # Определяем значение на основе номера сеанса
-      if seance_number == '4_1':
-          return 1
-      elif seance_number == '4_2':
-          return 2
-      elif seance_number == '5_1':
-          return 3
-      elif seance_number == '5_2':
-          return 4
-      elif seance_number == '7_1':
-          return 5
-      elif seance_number == '7_2':
-          return 6
-      else:
-          print("ОШИБКА В НАЗВАНИИ СЕССИИ")  # Выводим результат
-  else:
-      print("Число после 'Seance' не найдено.")
-
 
 #с фильтрацией
 out = {}
@@ -115,6 +91,7 @@ strategy = {}
 
 
 with pd.ExcelWriter('efficiacy_filtered.xlsx') as writer:
+    queue = 1
     for file in files:
         print(file)
         if file != 'efficiacy_filtered.xlsx':
@@ -131,13 +108,18 @@ with pd.ExcelWriter('efficiacy_filtered.xlsx') as writer:
           except:
             print('Проверьте правильность анализируемых файлов, в файле должно быть 2 листа, первый лист Info где описана информация про пациента и второй лист с данными')
             continue
+        else:
+          continue
+
         # Имя пациента
         name = (info.iloc[0, 1])
         print(name)
 
         # Номер сессии
         #session = file[0]
-        session = seance(file)
+        #session = seance(file)
+        session = queue
+        queue+=1
         print(name, 'session', session)
 
         #Удаление артефактов удалить секунду до и секунду после
@@ -167,36 +149,6 @@ with pd.ExcelWriter('efficiacy_filtered.xlsx') as writer:
         daf['decrease_EMG'] = (data['EMGINT1'] < data['EMGINT1'].shift()).astype(int)
         daf['increased_EEG'] = (data['ALPHA1'] > data['ALPHA1'].shift()).astype(int)
 
-        #Построим график эффективных и неэффективных участков
-        '''plt.plot(range(len(daf['decrease_EMG'])), daf['decrease_EMG'], label='decrease_EMG')
-        plt.plot(range(len(daf['increased_EEG'] )), daf['increased_EEG'], label='increase_EEG')
-        plt.title(f'effective times {session}')
-        plt.xlabel('time')
-        plt.ylabel('')
-        plt.legend()
-        plt.show()'''
-
-        '''buff = []
-        for i in daf.index:
-            if (daf['decrease_EMG'][i] == 1) and (daf['increased_EEG'][i] == 1):
-                buff.append(i)
-
-        effective = pd.DataFrame()
-        for i in buff:
-            effective = pd.concat([effective, data.iloc[i-1:i+1]])
-        effective = effective.drop_duplicates()
-
-        noeff = data.merge(effective, how='left', indicator=True)
-        noeff = noeff[noeff['_merge'] == 'left_only']
-        #effective.to_excel(session+'eff.xlsx')
-
-        #посчитать вместо среднего (среднее по дельтам /среднее по всем)
-        mean_eff_EMG, mean_eff_RR = mean_norm(data, effective, 'EMGINT1', 'RR1', True)
-        mean_eff_EEG, mean_eff_t = mean_norm(data, effective, 'ALPHA1', 'TEMP1', False)
-
-        mean_noeff_EMG, mean_noeff_RR = mean_norm(data, noeff, 'EMGINT1', 'RR1', True)
-        mean_noeff_EEG, mean_noeff_t = mean_norm(data, noeff, 'ALPHA1', 'TEMP1', True)'''
-
         index_eff = []
         index_noeff = []
         for i in daf.index:
@@ -214,16 +166,19 @@ with pd.ExcelWriter('efficiacy_filtered.xlsx') as writer:
         eff_EEG = 0
         eff_t = 0
         data_mean = data.mean()
-        for i in index_eff:
-          effective = pd.concat([effective, data.loc[i-1:i]])
-          effective = effective.drop_duplicates()
-          try:
-            eff_EMG += effective['EMGINT1'][i]-effective['EMGINT1'][i-1]
-            eff_RR += effective['RR1'][i]-effective['RR1'][i-1]
-            eff_EEG += effective['ALPHA1'][i]-effective['ALPHA1'][i-1]
-            eff_t += effective['TEMP1'][i]-effective['TEMP1'][i-1]
-          except:
-            print(f'отсутствуют данные для {j-1} - {j} times')
+        try:
+          for i in index_eff:
+            effective = pd.concat([effective, data.loc[i-1:i]])
+            effective = effective.drop_duplicates()
+            try:
+              eff_EMG += effective['EMGINT1'][i]-effective['EMGINT1'][i-1]
+              eff_RR += effective['RR1'][i]-effective['RR1'][i-1]
+              eff_EEG += effective['ALPHA1'][i]-effective['ALPHA1'][i-1]
+              eff_t += effective['TEMP1'][i]-effective['TEMP1'][i-1]
+            except:
+              print(f'отсутствуют данные для {i-1} - {i} times')
+        except:
+          print(f'отсутствуют эффективные участки')
         mean_eff_EMG = eff_EMG / data_mean['EMGINT1']
         mean_eff_RR = eff_RR / data_mean['RR1']
         mean_eff_EEG = eff_EEG / data_mean['ALPHA1']
@@ -234,16 +189,20 @@ with pd.ExcelWriter('efficiacy_filtered.xlsx') as writer:
         noeff_RR = 0
         noeff_EEG = 0
         noeff_t = 0
-        for j in index_noeff:
-          noeff = pd.concat([noeff, data.loc[j-1:j]])
-          noeff = noeff.drop_duplicates()
-          try:
-            noeff_EMG += noeff['EMGINT1'][j]-noeff['EMGINT1'][j-1]
-            noeff_RR += noeff['RR1'][j]-noeff['RR1'][j-1]
-            noeff_EEG += noeff['ALPHA1'][j]-noeff['ALPHA1'][j-1]
-            noeff_t += noeff['TEMP1'][j]-noeff['TEMP1'][j-1]
-          except:
-              print(f'отсутствуют данные для {j-1} - {j} times')
+        j = 0
+        try:
+          for j in index_noeff:
+            noeff = pd.concat([noeff, data.loc[j-1:j]])
+            noeff = noeff.drop_duplicates()
+            try:
+              noeff_EMG += noeff['EMGINT1'][j]-noeff['EMGINT1'][j-1]
+              noeff_RR += noeff['RR1'][j]-noeff['RR1'][j-1]
+              noeff_EEG += noeff['ALPHA1'][j]-noeff['ALPHA1'][j-1]
+              noeff_t += noeff['TEMP1'][j]-noeff['TEMP1'][j-1]
+            except:
+                print(f'отсутствуют данные для {j-1} - {j} times')
+        except:
+          print(f'отсутствуют неэффективные участки')
         mean_noeff_EMG = noeff_EMG / data_mean['EMGINT1']
         mean_noeff_RR = noeff_RR / data_mean['RR1']
         mean_noeff_EEG = noeff_EEG / data_mean['ALPHA1']
@@ -284,7 +243,7 @@ with pd.ExcelWriter('efficiacy_filtered.xlsx') as writer:
         EMGdelta[str('EMG delta'+ str(session) )] = delta_value[1]
         Tdelta[str('T delta '+ str(session) )] = delta_value[2]
         RRdelta[str('RR delta '+ str(session) )] = delta_value[3]
-        EEGdelta[str('alpha b '+ str(session) )] = delta_value[0]
+        EEGdelta[str('EEG delta '+ str(session) )] = delta_value[0]
 
         strategy[str('стратегия '+ str(session))] = [[]]
 
@@ -310,9 +269,6 @@ with pd.ExcelWriter('efficiacy_filtered.xlsx') as writer:
 
     out.update(time)
     out.update(strategy)
-
-
-    #out = dict(sorted(out.items()))
 
     df = pd.DataFrame(out)
 
